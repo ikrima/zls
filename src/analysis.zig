@@ -1772,13 +1772,13 @@ fn shouldAddToOutline(node_tag: Ast.Node.Tag) bool {
         .tagged_union_enum_tag_trailing,
         .tagged_union_two,
         .tagged_union_two_trailing,
-        .error_set_decl,
         => true,
 
         .root,
         .@"usingnamespace",
         .@"comptime",
         .test_decl,
+        .error_set_decl,
 
         .fn_proto,
         .fn_proto_simple,
@@ -1800,43 +1800,93 @@ fn shouldAddToOutline(node_tag: Ast.Node.Tag) bool {
 const DocSymbolInfo = struct {
     kind: types.DocumentSymbol.Kind,
     detail: []const u8 = "",
+    members: []const Ast.Node.Index = &[_]Ast.Node.Index{},
+
+    fn tryContainerDecl(tree: Ast, node: Ast.Node.Index, buf: *[2]Ast.Node.Index) ?DocSymbolInfo {
+        const token_tags: []const std.zig.Token.Tag = tree.tokens.items(.tag);
+        const full_decl: Ast.full.ContainerDecl = switch (tree.nodes.items(.tag)[node]) {
+            .container_decl, .container_decl_trailing => tree.containerDecl(node),
+            .container_decl_arg, .container_decl_arg_trailing => tree.containerDeclArg(node),
+            .container_decl_two, .container_decl_two_trailing => tree.containerDeclTwo(buf, node),
+            .tagged_union, .tagged_union_trailing => tree.taggedUnion(node),
+            .tagged_union_enum_tag, .tagged_union_enum_tag_trailing => tree.taggedUnionEnumTag(node),
+            .tagged_union_two, .tagged_union_two_trailing => tree.taggedUnionTwo(buf, node),
+            else => return null,
+        };
+        return switch (token_tags[full_decl.ast.main_token]) {
+            .keyword_enum => {
+                const decl_arg_name = if (full_decl.ast.arg != 0) getDeclName(tree, full_decl.ast.arg) else null;
+                return DocSymbolInfo{
+                    .kind = .Enum,
+                    .detail = decl_arg_name orelse "",
+                    .members = full_decl.ast.members,
+                };
+            },
+            .keyword_struct => DocSymbolInfo{
+                .kind = .Struct,
+                .detail = "struct",
+                .members = full_decl.ast.members,
+            },
+            .keyword_union => {
+                const has_auto_enum = full_decl.ast.enum_token != null;
+                const decl_arg_name = if (full_decl.ast.arg != 0) getDeclName(tree, full_decl.ast.arg) else null;
+                return DocSymbolInfo{
+                    .kind = .Class,
+                    .detail = decl_arg_name orelse if (has_auto_enum) "union(enum)" else "union",
+                    .members = full_decl.ast.members,
+                };
+            },
+            .keyword_opaque => DocSymbolInfo{
+                .kind = .Class,
+                .detail = "opaque",
+                .members = full_decl.ast.members,
+            },
+            else => DocSymbolInfo{
+                .kind = .Class,
+                .members = full_decl.ast.members,
+            },
+        };
+    }
 
     fn get(tree: Ast, node: Ast.Node.Index) DocSymbolInfo {
-        const token_tags: []const std.zig.Token.Tag = tree.tokens.items(.tag);
         const node_tags: []const Ast.Node.Tag = tree.nodes.items(.tag);
         const main_tokens: []const Ast.TokenIndex = tree.nodes.items(.main_token);
-
-        switch (node_tags[node]) {
-            .root => return DocSymbolInfo{ .kind = .File },
-            .@"usingnamespace" => return DocSymbolInfo{ .kind = .Namespace, .detail = "usingnamespace" },
-            .test_decl => return DocSymbolInfo{ .kind = .Variable, .detail = "test" },
+        return switch (node_tags[node]) {
+            .root => DocSymbolInfo{
+                .kind = .File,
+                .detail = "root",
+                .members = tree.rootDecls(),
+            },
+            .@"usingnamespace" => DocSymbolInfo{ .kind = .Namespace, .detail = "@usingnamespace" },
+            .test_decl => DocSymbolInfo{ .kind = .Variable, .detail = "test_decl" },
+            .error_set_decl => DocSymbolInfo{ .kind = .Class, .detail = "error_set" },
 
             .builtin_call,
             .builtin_call_comma,
             .builtin_call_two,
             .builtin_call_two_comma,
             => if (std.mem.eql(u8, tree.tokenSlice(main_tokens[node]), "@import"))
-                return DocSymbolInfo{ .kind = .Class, .detail = "import" }
+                DocSymbolInfo{ .kind = .Class, .detail = "@import" }
             else
-                return DocSymbolInfo{ .kind = .Variable },
+                DocSymbolInfo{ .kind = .Variable },
 
             .global_var_decl,
             .local_var_decl,
             .simple_var_decl,
             .aligned_var_decl,
-            => return DocSymbolInfo{ .kind = .Variable },
+            => DocSymbolInfo{ .kind = .Variable },
 
             .fn_proto,
             .fn_proto_simple,
             .fn_proto_multi,
             .fn_proto_one,
             .fn_decl,
-            => return DocSymbolInfo{ .kind = .Function },
+            => DocSymbolInfo{ .kind = .Function },
 
             .container_field,
             .container_field_align,
             .container_field_init,
-            => return DocSymbolInfo{ .kind = .Field },
+            => DocSymbolInfo{ .kind = .Field },
 
             .container_decl,
             .container_decl_trailing,
@@ -1850,17 +1900,13 @@ const DocSymbolInfo = struct {
             .tagged_union_enum_tag_trailing,
             .tagged_union_two,
             .tagged_union_two_trailing,
-            .error_set_decl,
-            => switch (token_tags[main_tokens[node]]) {
-                .keyword_enum => return DocSymbolInfo{ .kind = .Enum },
-                .keyword_struct => return DocSymbolInfo{ .kind = .Struct },
-                .keyword_union => return DocSymbolInfo{ .kind = .Class },
-                .keyword_opaque => return DocSymbolInfo{ .kind = .Class },
-                else => return DocSymbolInfo{ .kind = .Class },
+            => {
+                var buf: [2]Ast.Node.Index = undefined;
+                return DocSymbolInfo.tryContainerDecl(tree, node, &buf).?;
             },
 
-            else => return DocSymbolInfo{ .kind = .Variable },
-        }
+            else => DocSymbolInfo{ .kind = .Variable },
+        };
     }
 };
 
@@ -1874,7 +1920,7 @@ const GetDocumentSymbolsContext = struct {
     encoding: offsets.Encoding,
 };
 
-fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast.Node.Index, context: *GetDocumentSymbolsContext, parent_info: DocSymbolInfo) anyerror!void {
+fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast.Node.Index, context: *GetDocumentSymbolsContext, parent_kind: types.DocumentSymbol.Kind) anyerror!void {
     const name = getDeclName(tree, node) orelse return;
     if (name.len == 0)
         return;
@@ -1920,18 +1966,17 @@ fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast
         .aligned_var_decl,
         => info: {
             const var_init_node = ast.varDecl(tree, node).?.ast.init_node;
-            if (var_init_node != 0) {
-                const symbol_info = DocSymbolInfo.get(tree, var_init_node);
-                if (ast.isContainer(tree, var_init_node)) {
-                    var buf: [2]Ast.Node.Index = undefined;
-                    for (ast.declMembers(tree, var_init_node, &buf)) |member|
-                        if (shouldAddToOutline(node_tags[member]))
-                            try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info);
-                }
+            var buf: [2]Ast.Node.Index = undefined;
+            const container_info = if (var_init_node != 0) DocSymbolInfo.tryContainerDecl(tree, var_init_node, &buf) else null;
+            if (container_info) |symbol_info| {
+                for (symbol_info.members) |member|
+                    if (shouldAddToOutline(node_tags[member]))
+                        try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info.kind);
                 break :info symbol_info;
-            } else {
+            } else if (var_init_node != 0)
+                break :info DocSymbolInfo.get(tree, var_init_node)
+            else
                 break :info DocSymbolInfo.get(tree, node);
-            }
         },
 
         .fn_proto,
@@ -1945,12 +1990,12 @@ fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast
             const fn_proto = ast.fnProto(tree, fn_data.lhs, &fn_params).?;
             const ret_stmt = if (isTypeFunction(tree, fn_proto)) findReturnStatement(tree, fn_proto, fn_data.rhs) else null;
             const ret_type_decl = if (ret_stmt != null) node_datas[ret_stmt.?].lhs else 0;
-            if (ret_type_decl != 0 and ast.isContainer(tree, ret_type_decl)) {
-                const symbol_info = DocSymbolInfo.get(tree, ret_type_decl);
-                var buf: [2]Ast.Node.Index = undefined;
-                for (ast.declMembers(tree, ret_type_decl, &buf)) |member|
+            var buf: [2]Ast.Node.Index = undefined;
+            const ret_symbol_info = if (ret_type_decl != 0) DocSymbolInfo.tryContainerDecl(tree, ret_type_decl, &buf) else null;
+            if (ret_symbol_info) |symbol_info| {
+                for (symbol_info.members) |member|
                     if (shouldAddToOutline(node_tags[member]))
-                        try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info);
+                        try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info.kind);
                 break :info symbol_info;
             } else {
                 break :info DocSymbolInfo{ .kind = .Function };
@@ -1960,7 +2005,7 @@ fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast
         .container_field,
         .container_field_align,
         .container_field_init,
-        => DocSymbolInfo{ .kind = if (parent_info.kind == .Enum) .EnumMember else .Field },
+        => DocSymbolInfo{ .kind = if (parent_kind == .Enum) .EnumMember else .Field },
 
         .container_decl,
         .container_decl_trailing,
@@ -1974,13 +2019,12 @@ fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast
         .tagged_union_enum_tag_trailing,
         .tagged_union_two,
         .tagged_union_two_trailing,
-        .error_set_decl,
         => info: {
-            const symbol_info = DocSymbolInfo.get(tree, node);
             var buf: [2]Ast.Node.Index = undefined;
-            for (ast.declMembers(tree, node, &buf)) |member|
+            const symbol_info = DocSymbolInfo.tryContainerDecl(tree, node, &buf).?;
+            for (symbol_info.members) |member|
                 if (shouldAddToOutline(node_tags[member]))
-                    try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info);
+                    try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info.kind);
             break :info symbol_info;
         },
 
@@ -2007,7 +2051,7 @@ pub fn getDocumentSymbols(allocator: std.mem.Allocator, tree: Ast, encoding: off
     };
 
     for (tree.rootDecls()) |idx| {
-        try getDocumentSymbolsInternal(allocator, tree, idx, &context, DocSymbolInfo{ .kind = .File });
+        try getDocumentSymbolsInternal(allocator, tree, idx, &context, .File);
     }
 
     return symbols.items;
