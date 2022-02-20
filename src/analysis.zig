@@ -1616,8 +1616,25 @@ pub fn documentPositionContext(arena: *std.heap.ArenaAllocator, document: types.
     };
 }
 
-fn addOutlineNodes(allocator: std.mem.Allocator, tree: Ast, child: Ast.Node.Index, context: *GetDocumentSymbolsContext) anyerror!void {
-    switch (tree.nodes.items(.tag)[child]) {
+fn shouldAddToOutline(node_tag: Ast.Node.Tag) bool {
+    return switch (node_tag) {
+        .grouped_expression,
+        .error_value,
+        .@"suspend",
+        .@"nosuspend",
+        .@"errdefer",
+        .@"catch",
+        .@"asm",
+        .asm_simple,
+        .asm_output,
+        .asm_input,
+        => false,
+
+        .anyframe_type,
+        .anyframe_literal,
+        .unreachable_literal,
+        .char_literal,
+        .float_literal,
         .string_literal,
         .integer_literal,
         .builtin_call,
@@ -1651,6 +1668,14 @@ fn addOutlineNodes(allocator: std.mem.Allocator, tree: Ast, child: Ast.Node.Inde
         .assign_add_wrap,
         .assign_mul,
         .assign_mul_wrap,
+        .assign_mul_sat,
+        .assign_add_sat,
+        .assign_sub_sat,
+        .assign_shl_sat,
+        .mul_sat,
+        .add_sat,
+        .sub_sat,
+        .shl_sat,
         .bang_equal,
         .bit_and,
         .bit_or,
@@ -1706,6 +1731,7 @@ fn addOutlineNodes(allocator: std.mem.Allocator, tree: Ast, child: Ast.Node.Inde
         .array_init_dot_two_comma,
         .array_init_one,
         .array_init_one_comma,
+        .slice,
         .@"switch",
         .switch_comma,
         .switch_case,
@@ -1732,9 +1758,10 @@ fn addOutlineNodes(allocator: std.mem.Allocator, tree: Ast, child: Ast.Node.Inde
         .block_semicolon,
         .block_two,
         .block_two_semicolon,
-        .error_set_decl,
-        => return,
+        => false,
+
         .container_decl,
+        .container_decl_trailing,
         .container_decl_arg,
         .container_decl_arg_trailing,
         .container_decl_two,
@@ -1745,16 +1772,97 @@ fn addOutlineNodes(allocator: std.mem.Allocator, tree: Ast, child: Ast.Node.Inde
         .tagged_union_enum_tag_trailing,
         .tagged_union_two,
         .tagged_union_two_trailing,
-        => {
-            var buf: [2]Ast.Node.Index = undefined;
-            for (ast.declMembers(tree, child, &buf)) |member|
-                try addOutlineNodes(allocator, tree, member, context);
-            return;
-        },
-        else => {},
-    }
-    try getDocumentSymbolsInternal(allocator, tree, child, context);
+        .error_set_decl,
+        => true,
+
+        .root,
+        .@"usingnamespace",
+        .@"comptime",
+        .test_decl,
+
+        .fn_proto,
+        .fn_proto_simple,
+        .fn_proto_multi,
+        .fn_proto_one,
+        .fn_decl,
+
+        .local_var_decl,
+        .global_var_decl,
+        .aligned_var_decl,
+        .simple_var_decl,
+
+        .container_field,
+        .container_field_align,
+        .container_field_init,
+        => true,
+    };
 }
+const DocSymbolInfo = struct {
+    kind: types.DocumentSymbol.Kind,
+    detail: []const u8 = "",
+
+    fn get(tree: Ast, node: Ast.Node.Index) DocSymbolInfo {
+        const token_tags: []const std.zig.Token.Tag = tree.tokens.items(.tag);
+        const node_tags: []const Ast.Node.Tag = tree.nodes.items(.tag);
+        const main_tokens: []const Ast.TokenIndex = tree.nodes.items(.main_token);
+
+        switch (node_tags[node]) {
+            .root => return DocSymbolInfo{ .kind = .File },
+            .@"usingnamespace" => return DocSymbolInfo{ .kind = .Namespace, .detail = "usingnamespace" },
+            .test_decl => return DocSymbolInfo{ .kind = .Variable, .detail = "test" },
+
+            .builtin_call,
+            .builtin_call_comma,
+            .builtin_call_two,
+            .builtin_call_two_comma,
+            => if (std.mem.eql(u8, tree.tokenSlice(main_tokens[node]), "@import"))
+                return DocSymbolInfo{ .kind = .Class, .detail = "import" }
+            else
+                return DocSymbolInfo{ .kind = .Variable },
+
+            .global_var_decl,
+            .local_var_decl,
+            .simple_var_decl,
+            .aligned_var_decl,
+            => return DocSymbolInfo{ .kind = .Variable },
+
+            .fn_proto,
+            .fn_proto_simple,
+            .fn_proto_multi,
+            .fn_proto_one,
+            .fn_decl,
+            => return DocSymbolInfo{ .kind = .Function },
+
+            .container_field,
+            .container_field_align,
+            .container_field_init,
+            => return DocSymbolInfo{ .kind = .Field },
+
+            .container_decl,
+            .container_decl_trailing,
+            .container_decl_arg,
+            .container_decl_arg_trailing,
+            .container_decl_two,
+            .container_decl_two_trailing,
+            .tagged_union,
+            .tagged_union_trailing,
+            .tagged_union_enum_tag,
+            .tagged_union_enum_tag_trailing,
+            .tagged_union_two,
+            .tagged_union_two_trailing,
+            .error_set_decl,
+            => switch (token_tags[main_tokens[node]]) {
+                .keyword_enum => return DocSymbolInfo{ .kind = .Enum },
+                .keyword_struct => return DocSymbolInfo{ .kind = .Struct },
+                .keyword_union => return DocSymbolInfo{ .kind = .Class },
+                .keyword_opaque => return DocSymbolInfo{ .kind = .Class },
+                else => return DocSymbolInfo{ .kind = .Class },
+            },
+
+            else => return DocSymbolInfo{ .kind = .Variable },
+        }
+    }
+};
 
 const GetDocumentSymbolsContext = struct {
     prev_loc: offsets.TokenLocation = .{
@@ -1766,7 +1874,7 @@ const GetDocumentSymbolsContext = struct {
     encoding: offsets.Encoding,
 };
 
-fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast.Node.Index, context: *GetDocumentSymbolsContext) anyerror!void {
+fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast.Node.Index, context: *GetDocumentSymbolsContext, parent_info: DocSymbolInfo) anyerror!void {
     const name = getDeclName(tree, node) orelse return;
     if (name.len == 0)
         return;
@@ -1796,67 +1904,96 @@ fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast
         },
     };
 
-    const tags = tree.nodes.items(.tag);
-    (try context.symbols.addOne(allocator)).* = .{
-        .name = name,
-        .kind = switch (tags[node]) {
-            .fn_proto,
-            .fn_proto_simple,
-            .fn_proto_multi,
-            .fn_proto_one,
-            .fn_decl,
-            => .Function,
-            .local_var_decl,
-            .global_var_decl,
-            .aligned_var_decl,
-            .simple_var_decl,
-            => .Variable,
-            .container_field,
-            .container_field_align,
-            .container_field_init,
-            .tagged_union_enum_tag,
-            .tagged_union_enum_tag_trailing,
-            .tagged_union,
-            .tagged_union_trailing,
-            .tagged_union_two,
-            .tagged_union_two_trailing,
-            => .Field,
-            else => .Variable,
+    const node_tags: []const Ast.Node.Tag = tree.nodes.items(.tag);
+    (try context.symbols.addOne()).* = .{
+
+    var children = std.ArrayList(types.DocumentSymbol).init(allocator);
+    var child_context = GetDocumentSymbolsContext{
+        .prev_loc = start_loc,
+        .symbols = &children,
+        .encoding = context.encoding,
+    };
+    const child_info: DocSymbolInfo = switch (node_tags[node]) {
+        .global_var_decl,
+        .local_var_decl,
+        .simple_var_decl,
+        .aligned_var_decl,
+        => info: {
+            const var_init_node = ast.varDecl(tree, node).?.ast.init_node;
+            if (var_init_node != 0) {
+                const symbol_info = DocSymbolInfo.get(tree, var_init_node);
+                if (ast.isContainer(tree, var_init_node)) {
+                    var buf: [2]Ast.Node.Index = undefined;
+                    for (ast.declMembers(tree, var_init_node, &buf)) |member|
+                        if (shouldAddToOutline(node_tags[member]))
+                            try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info);
+                }
+                break :info symbol_info;
+            } else {
+                break :info DocSymbolInfo.get(tree, node);
+            }
         },
+
+        .fn_proto,
+        .fn_proto_simple,
+        .fn_proto_multi,
+        .fn_proto_one,
+        => DocSymbolInfo{ .kind = .Function },
+        .fn_decl => info: {
+            const fn_data = node_datas[node];
+            var fn_params: [1]Ast.Node.Index = undefined;
+            const fn_proto = ast.fnProto(tree, fn_data.lhs, &fn_params).?;
+            const ret_stmt = if (isTypeFunction(tree, fn_proto)) findReturnStatement(tree, fn_proto, fn_data.rhs) else null;
+            const ret_type_decl = if (ret_stmt != null) node_datas[ret_stmt.?].lhs else 0;
+            if (ret_type_decl != 0 and ast.isContainer(tree, ret_type_decl)) {
+                const symbol_info = DocSymbolInfo.get(tree, ret_type_decl);
+                var buf: [2]Ast.Node.Index = undefined;
+                for (ast.declMembers(tree, ret_type_decl, &buf)) |member|
+                    if (shouldAddToOutline(node_tags[member]))
+                        try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info);
+                break :info symbol_info;
+            } else {
+                break :info DocSymbolInfo{ .kind = .Function };
+            }
+        },
+
+        .container_field,
+        .container_field_align,
+        .container_field_init,
+        => DocSymbolInfo{ .kind = if (parent_info.kind == .Enum) .EnumMember else .Field },
+
+        .container_decl,
+        .container_decl_trailing,
+        .container_decl_arg,
+        .container_decl_arg_trailing,
+        .container_decl_two,
+        .container_decl_two_trailing,
+        .tagged_union,
+        .tagged_union_trailing,
+        .tagged_union_enum_tag,
+        .tagged_union_enum_tag_trailing,
+        .tagged_union_two,
+        .tagged_union_two_trailing,
+        .error_set_decl,
+        => info: {
+            const symbol_info = DocSymbolInfo.get(tree, node);
+            var buf: [2]Ast.Node.Index = undefined;
+            for (ast.declMembers(tree, node, &buf)) |member|
+                if (shouldAddToOutline(node_tags[member]))
+                    try getDocumentSymbolsInternal(allocator, tree, member, &child_context, symbol_info);
+            break :info symbol_info;
+        },
+
+        else => DocSymbolInfo.get(tree, node),
+    };
+    (try context.symbols.addOne()).* = .{
+        .name = name,
+        .kind = child_info.kind,
         .range = range,
         .selectionRange = range,
-        .detail = "",
-        .children = ch: {
-            var children = std.ArrayListUnmanaged(types.DocumentSymbol){};
-
-            var child_context = GetDocumentSymbolsContext{
-                .prev_loc = start_loc,
-                .symbols = &children,
-                .encoding = context.encoding,
-            };
-
-            if (ast.isContainer(tree, node)) {
-                var buf: [2]Ast.Node.Index = undefined;
-                for (ast.declMembers(tree, node, &buf)) |child|
-                    try addOutlineNodes(allocator, tree, child, &child_context);
-            }
-
-            if (ast.varDecl(tree, node)) |var_decl| {
-                if (var_decl.ast.init_node != 0)
-                    try addOutlineNodes(allocator, tree, var_decl.ast.init_node, &child_context);
-            }
-            if (tags[node] == .fn_decl) fn_ch: {
-                const fn_decl = tree.nodes.items(.data)[node];
-                var params: [1]Ast.Node.Index = undefined;
-                const fn_proto = ast.fnProto(tree, fn_decl.lhs, &params) orelse break :fn_ch;
-                if (!isTypeFunction(tree, fn_proto)) break :fn_ch;
-                const ret_stmt = findReturnStatement(tree, fn_proto, fn_decl.rhs) orelse break :fn_ch;
-                const type_decl = tree.nodes.items(.data)[ret_stmt].lhs;
-                if (type_decl != 0)
-                    try addOutlineNodes(allocator, tree, type_decl, &child_context);
-            }
-            break :ch children.items;
-        },
+            var children = std.ArrayList(types.DocumentSymbol).init(allocator);
+        .detail = child_info.detail,
+        .children = children.items,
     };
 }
 
@@ -1870,7 +2007,7 @@ pub fn getDocumentSymbols(allocator: std.mem.Allocator, tree: Ast, encoding: off
     };
 
     for (tree.rootDecls()) |idx| {
-        try getDocumentSymbolsInternal(allocator, tree, idx, &context);
+        try getDocumentSymbolsInternal(allocator, tree, idx, &context, DocSymbolInfo{ .kind = .File });
     }
 
     return symbols.items;
