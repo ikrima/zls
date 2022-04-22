@@ -1,0 +1,32 @@
+{
+  "C_Cpp.intelliSenseEngine": "Disabled",
+  "zig.buildRootDir": "${workspaceFolder}",
+
+  "zls.binary":       "${env:EDEV_ZLSDIR}/zig-out/base/bin/zls.exe",
+  // "zls.binary":    "${env:EDEV_ZLSDIR}/zig-out/rel/bin/zls.exe",
+  "zls.debugBinary":  "${env:EDEV_ZLSDIR}/zig-out/dbg/bin/zls.exe",
+  "zls.enableDebug":  true,
+  "zls.trace.server": { "verbosity": "compact", "format": "text" },
+
+  "peacock.color": "#f9b84f",
+  "workbench.colorCustomizations": {
+    "activityBar.activeBackground": "#fbcc80",
+    "activityBar.activeBorder": "#059a61",
+    "activityBar.background": "#fbcc80",
+    "activityBar.foreground": "#15202b",
+    "activityBar.inactiveForeground": "#15202b99",
+    "activityBarBadge.background": "#059a61",
+    "activityBarBadge.foreground": "#e7e7e7",
+    "sash.hoverBorder": "#fbcc80",
+    "statusBar.background": "#f9b84f",
+    "statusBar.foreground": "#15202b",
+    "statusBarItem.hoverBackground": "#f7a41e",
+    "statusBarItem.remoteBackground": "#f9b84f",
+    "statusBarItem.remoteForeground": "#15202b",
+    "titleBar.activeBackground": "#f9b84f",
+    "titleBar.activeForeground": "#15202b",
+    "titleBar.inactiveBackground": "#f9b84f99",
+    "titleBar.inactiveForeground": "#15202b99",
+    "commandCenter.border": "#15202b99"
+  },
+}
