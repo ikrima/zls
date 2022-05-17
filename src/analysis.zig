@@ -1294,6 +1294,89 @@ pub fn getFieldAccessType(store: *DocumentStore, arena: *std.heap.ArenaAllocator
 
                 current_type = (try resolveBracketAccessType(store, arena, current_type, if (is_range) .Range else .Single, &bound_type_params)) orelse return null;
             },
+            .builtin => {
+                const builtin_name = tokenizer.buffer[tok.loc.start..tok.loc.end];
+                if (!std.mem.eql(u8, builtin_name, "@typeInfo")) {
+                    log.debug("Unimplemented builtin: {s}", .{builtin_name});
+                    return null;
+                }
+                const std_builtin_decl: DeclWithHandle = std_builtin_decl: {
+                    const std_handle = (store.resolveImport(current_type.handle, "std") catch null) orelse {
+                        log.debug("Could not find handle for std uri", .{});
+                        return null;
+                    };
+                    const std_builtin_decl = (lookupSymbolContainer(store, arena, .{ .node = 0, .handle = std_handle }, "builtin", false) catch null) orelse {
+                        log.debug("Could not lookupSymbolContainer for std_builtin_decl", .{});
+                        return null;
+                    };
+                    break :std_builtin_decl std_builtin_decl;
+                    // const std_builtin_handle = store.resolveImport(current_type.handle, "std.builtin") catch |err| {
+                    //     log.debug("Error {} while resolveImport(std.builtin)", .{err});
+                    //     return null;
+                    // } orelse {
+                    //     log.debug("Could not find handle for std.builtin uri", .{});
+                    //     return null;
+                    // };
+                };
+                const std_builtin_type = (resolveTypeOfNode(store, arena, .{ .node = std_builtin_decl.decl.ast_node, .handle = std_builtin_decl.handle }) catch null) orelse {
+                    log.debug("Could not resolveTypeOfNode for std_builtin_decl", .{});
+                    return null;
+                };
+                const std_builtin_node = std_builtin_type.type.data.other;
+                const std_builtin_handle = std_builtin_type.handle;
+
+                const type_info_decl = (lookupSymbolContainer(store, arena, .{ .node = std_builtin_node, .handle = std_builtin_handle }, "Type", false) catch null) orelse {
+                    log.debug("could not find  type_info_decl", .{});
+                    return null;
+                };
+
+                current_type = (type_info_decl.resolveType(store, arena, &bound_type_params) catch null) orelse {
+                    log.debug("could not resolveType std.builtin.Type", .{});
+                    return null;
+                };
+
+                // const maybe_type_info_decl = maybe_type_info_decl: {
+                //     const container_scope = findContainerScope(.{ .node = std_builtin_node, .handle = std_builtin_handle }) orelse break :maybe_type_info_decl null;
+                //     const candidate = container_scope.decls.getEntry("Type") orelse {
+                //         var it = container_scope.decls.iterator();
+                //         while (it.next()) |kv| {
+                //             log.debug("Key: {s}, val: {}", .{ kv.key_ptr.*, std.meta.activeTag(kv.value_ptr.*) });
+                //         }
+                //         break :maybe_type_info_decl null;
+                //     };
+                //     switch (candidate.value_ptr.*) {
+                //         .ast_node => break :maybe_type_info_decl DeclWithHandle{ .decl = candidate.value_ptr, .handle = handle },
+                //         else => break :maybe_type_info_decl null,
+                //     }
+                // };
+                // const type_info_decl = maybe_type_info_decl orelse {
+                //     log.debug("could not find  type_info_decl", .{});
+                //     return null;
+                // };
+                // current_type = (type_info_decl.resolveType(store, arena, &bound_type_params) catch null) orelse {
+                //     log.debug("could not resolveType std.builtin.Type", .{});
+                //     return null;
+                // };
+
+                // Skip to the right paren
+                var paren_count: i32 = 0;
+                var next_tag = tokenizer.next().tag;
+                while (next_tag != .eof) : (next_tag = tokenizer.next().tag) {
+                    switch (next_tag) {
+                        .l_paren => {
+                            paren_count += 1;
+                        },
+                        .r_paren => {
+                            paren_count -= 1;
+                            if (paren_count == 0) break;
+                        },
+                        else => {},
+                    }
+                } else {
+                    log.debug("mismatch paren count for builtin call {s}", .{builtin_name});
+                    return null;
+                }
+            },
             else => {
                 log.debug("Unimplemented token: {}", .{tok.tag});
                 return null;
