@@ -35,7 +35,7 @@ pub fn log(
 fn loop(server: *Server) !void {
     var reader = std.io.getStdIn().reader();
 
-    while (server.keep_running) {
+    while (server.lifecycle_phase != .exit_phase) {
         const headers = readRequestHeader(server.allocator, reader) catch |err| {
             logger.err("{s}; exiting!", .{@errorName(err)});
             return;

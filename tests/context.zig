@@ -36,6 +36,7 @@ pub const Context = struct {
 
     pub fn deinit(self: *Context) void {
         self.request("shutdown", "{}", null) catch {};
+        self.request("exit", "{}", null) catch {};
         self.server.deinit();
     }
 

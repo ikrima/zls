@@ -31,7 +31,7 @@ document_store: DocumentStore = undefined,
 builtin_completions: ?std.ArrayListUnmanaged(types.CompletionItem) = null,
 client_capabilities: ClientCapabilities = .{},
 offset_encoding: offsets.Encoding = .utf16,
-keep_running: bool = true,
+lifecycle_phase: enum { running_phase, shutdown_phase, exit_phase } = .running_phase,
 
 // Code was based off of https://github.com/andersfr/zig-lsp/blob/master/server.zig
 
@@ -45,6 +45,9 @@ const ClientCapabilities = struct {
     supports_configuration: bool = false,
 };
 
+const invalid_request_response =
+    \\,"error":{"code":-32600,"message":"InvalidRequest"}}
+;
 const not_implemented_response =
     \\,"error":{"code":-32601,"message":"NotImplemented"}}
 ;
@@ -1865,9 +1868,16 @@ fn initializedHandler(server: *Server, writer: anytype, id: types.RequestId) !vo
 fn shutdownHandler(server: *Server, writer: anytype, id: types.RequestId) !void {
     log.info("Server closing...", .{});
 
-    server.keep_running = false;
-    // Technically we should deinitialize first and send possible errors to the client
+    server.lifecycle_phase = .shutdown_phase;
+    // Main dispatch loop handles lifecycle error handling to send possible errors to the client
     try respondGeneric(writer, id, null_result_response);
+}
+
+fn exitHandler(server: *Server, writer: anytype, id: types.RequestId) error{}!void {
+    _ = id;
+    _ = writer;
+    log.info("Server exiting...", .{});
+    server.lifecycle_phase = .exit_phase;
 }
 
 fn openDocumentHandler(server: *Server, writer: anytype, id: types.RequestId, req: requests.OpenDocument) !void {
@@ -2463,6 +2473,7 @@ pub fn processJsonRpc(server: *Server, writer: anytype, json: []const u8) !void 
         .{"textDocument/willSave"},
         .{ "initialize", requests.Initialize, initializeHandler },
         .{ "shutdown", void, shutdownHandler },
+        .{ "exit", void, exitHandler },
         .{ "textDocument/didOpen", requests.OpenDocument, openDocumentHandler },
         .{ "textDocument/didChange", requests.ChangeDocument, changeDocumentHandler },
         .{ "textDocument/didSave", requests.SaveDocument, saveDocumentHandler },
@@ -2489,30 +2500,47 @@ pub fn processJsonRpc(server: *Server, writer: anytype, json: []const u8) !void 
     var done: ?anyerror = null;
     inline for (method_map) |method_info| {
         if (done == null and std.mem.eql(u8, method, method_info[0])) {
-            if (method_info.len == 1) {
-                log.warn("method not mapped: {s}", .{method});
-                done = error.HackDone;
-            } else if (method_info[1] != void) {
-                const ReqT = method_info[1];
-                if (requests.fromDynamicTree(&server.arena, ReqT, tree.root)) |request_obj| {
-                    done = error.HackDone;
-                    done = extractErr(method_info[2](server, writer, id, request_obj));
-                } else |err| {
-                    if (err == error.MalformedJson) {
-                        log.warn("Could not create request type {s} from JSON {s}", .{ @typeName(ReqT), json });
-                    }
-                    done = err;
-                }
+            const expected_phase = comptime if (std.mem.eql(u8, method_info[0], "shutdown"))
+                .running_phase
+            else if (std.mem.eql(u8, method_info[0], "exit"))
+                .shutdown_phase
+            else
+                .running_phase;
+            if (server.lifecycle_phase != expected_phase) {
+                log.warn("Server received {s} during incorrect state {}, instead of {}", .{ method, server.lifecycle_phase, expected_phase });
+                done = error.InvalidRequest;
             } else {
-                done = error.HackDone;
-                (method_info[2])(server, writer, id) catch |err| {
-                    done = err;
-                };
+                if (method_info.len == 1) {
+                    log.warn("method not mapped: {s}", .{method});
+                    done = error.HackDone;
+                } else if (method_info[1] != void) {
+                    const ReqT = method_info[1];
+                    if (requests.fromDynamicTree(&server.arena, ReqT, tree.root)) |request_obj| {
+                        done = error.HackDone;
+                        done = extractErr(method_info[2](server, writer, id, request_obj));
+                    } else |err| {
+                        if (err == error.MalformedJson) {
+                            log.warn("Could not create request type {s} from JSON {s}", .{ @typeName(ReqT), json });
+                        }
+                        done = err;
+                    }
+                } else {
+                    done = error.HackDone;
+                    (method_info[2])(server, writer, id) catch |err| {
+                        done = err;
+                    };
+                }
             }
         }
     }
     if (done) |err| switch (err) {
         error.MalformedJson => return try respondGeneric(writer, id, null_result_response),
+        error.InvalidRequest => {
+            switch (server.lifecycle_phase) {
+                .running_phase, .shutdown_phase => return try respondGeneric(writer, id, invalid_request_response),
+                .exit_phase => return err,
+            }
+        },
         error.HackDone => return,
         else => return err,
     };
