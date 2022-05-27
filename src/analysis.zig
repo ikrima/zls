@@ -1160,9 +1160,9 @@ pub const FieldAccessReturn = struct {
 };
 
 var cached_type_info_type: ?TypeWithHandle = null;
-pub fn resolveTypeInfoType(store: *DocumentStore, arena: *std.heap.ArenaAllocator, handle: *DocumentStore.Handle) !?TypeWithHandle {
+pub fn resolveTypeInfoType(store: *DocumentStore, arena: *std.heap.ArenaAllocator, handle: *DocumentStore.Handle) error{OutOfMemory}!?TypeWithHandle {
     if (cached_type_info_type == null) {
-        const std_handle = (try store.resolveImport(handle, "std")) orelse {
+        const std_handle = (store.resolveImport(handle, "std") catch null) orelse {
             log.debug("Could not find handle for std uri", .{});
             return null;
         };
@@ -1180,7 +1180,7 @@ pub fn resolveTypeInfoType(store: *DocumentStore, arena: *std.heap.ArenaAllocato
             return null;
         };
         const type_info_node = NodeWithHandle{ .node = type_info_decl.decl.ast_node, .handle = type_info_decl.handle };
-        var bound_type_params = BoundTypeParams.init(arena.allocator());
+        var bound_type_params = BoundTypeParams{};
         cached_type_info_type = (try resolveTypeOfNodeInternal(store, arena, type_info_node, &bound_type_params)) orelse {
             log.debug("could not resolveType std.builtin.Type", .{});
             return null;
@@ -1333,7 +1333,7 @@ pub fn getFieldAccessType(store: *DocumentStore, arena: *std.heap.ArenaAllocator
                     return null;
                 }
                 if (try resolveTypeInfoType(store, arena, current_type.handle)) |type_info_type| {
-                    current_type = type_info_type;
+                    current_type = type_info_type.instanceTypeVal().?;
                     // Skip to the right paren
                     var paren_count: u32 = 1;
                     var next_tag = if (tokenizer.next().tag != .l_paren) .eof else tokenizer.next().tag;
