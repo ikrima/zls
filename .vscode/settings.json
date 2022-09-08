@@ -2,7 +2,7 @@
   "C_Cpp.intelliSenseEngine": "Disabled",
   "zig.buildRootDir": "${workspaceFolder}",
 
-  "zls.binary":       "${env:EDEV_ZLSDIR}/zig-out/base/bin/zls.exe",
+  "zls.binary":       "${env:EDEV_ZLSDIR}/zig-out/upstream/bin/zls.exe",
   // "zls.binary":    "${env:EDEV_ZLSDIR}/zig-out/rel/bin/zls.exe",
   "zls.debugBinary":  "${env:EDEV_ZLSDIR}/zig-out/dbg/bin/zls.exe",
   "zls.enableDebug":  true,

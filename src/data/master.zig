@@ -76,7 +76,7 @@ pub const builtins = [_]Builtin{
         \\
         \\The provided `frame_buffer` must be large enough to fit the entire function frame. This size can be determined with [@frameSize](https://ziglang.org/documentation/master/#frameSize). To provide a too-small buffer invokes safety-checked [Undefined Behavior](https://ziglang.org/documentation/master/#Undefined-Behavior).
         \\
-        \\`result_ptr` is optional ([null](https://ziglang.org/documentation/master/#null) may be provided). If provided, the function call will write its result directly to the result pointer, which will be available to read after [await](https://ziglang.org/documentation/master/#Async-and-Await) completes. Any result location provided to `await` will copy the result from `result_ptr`.</p> {#code_begin|test|async_struct_field_fn_pointer#} {#backend_stage1#} const std = @import("std"); const expect = std.testing.expect; test "async fn pointer in a struct field" { var data: i32 = 1; const Foo = struct { bar: fn (*i32) callconv(.Async) void, }; var foo = Foo{ .bar = func }; var bytes: [64]u8 align(@alignOf(@Frame(func))) = undefined; const f = @asyncCall(&bytes, {}, foo.bar, .{&data}); try expect(data == 2); resume f; try expect(data == 4); } fn func(y: *i32) void { defer y.* += 2; y.* += 1; suspend {} }`
+        \\`result_ptr` is optional ([null](https://ziglang.org/documentation/master/#null) may be provided). If provided, the function call will write its result directly to the result pointer, which will be available to read after [await](https://ziglang.org/documentation/master/#Async-and-Await) completes. Any result location provided to `await` will copy the result from `result_ptr`.</p> {#code_begin|test|async_struct_field_fn_pointer#} {#backend_stage1#} const std = @import("std"); const expect = std.testing.expect; test "async fn pointer in a struct field" { var data: i32 = 1; const Foo = struct { bar: fn (*i32) callconv(.Async) void, }; var foo = Foo{ .bar = func }; var bytes: [64]u8 align(@alignOf(@Frame(func))) = undefined; const f = @asyncCall(&bytes, {}, foo.bar, .{&data}); try expect(data == 2); resume f; try expect(data == 4); } fn func(y: *i32) void { defer y.* += 2; y.* += 1; suspend {} }`<pre>
         ,
         .arguments = &.{
             "frame_buffer: []align(@alignOf(@Frame(anyAsyncFunction))) u8",
@@ -416,7 +416,7 @@ pub const builtins = [_]Builtin{
         .signature = "@cmpxchgWeak(comptime T: type, ptr: *T, expected_value: T, new_value: T, success_order: AtomicOrder, fail_order: AtomicOrder) ?T",
         .snippet = "@cmpxchgWeak(${1:comptime T: type}, ${2:ptr: *T}, ${3:expected_value: T}, ${4:new_value: T}, ${5:success_order: AtomicOrder}, ${6:fail_order: AtomicOrder})",
         .documentation =
-        \\This function performs a weak atomic compare exchange operation. It's the equivalent of this code, except atomic:</p> {#syntax_block|zig|cmpxchgWeakButNotAtomic#} fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_value: T) ?T { const old_value = ptr.*; if (old_value == expected_value and usuallyTrueButSometimesFalse()) { ptr.* = new_value; return null; } else { return old_value; } } {#end_syntax_block#} 
+        \\This function performs a weak atomic compare exchange operation. It's the equivalent of this code, except atomic:</p> {#syntax_block|zig|cmpxchgWeakButNotAtomic#} fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_value: T) ?T { const old_value = ptr.*; if (old_value == expected_value and usuallyTrueButSometimesFalse()) { ptr.* = new_value; return null; } else { return old_value; } } {#end_syntax_block#}
         \\
         \\If you are using cmpxchg in a loop, the sporadic failure will be no problem, and `cmpxchgWeak` is the better choice, because it can be implemented more efficiently in machine instructions. However if you need a stronger guarantee, use [@cmpxchgStrong](https://ziglang.org/documentation/master/#cmpxchgStrong).
         \\
@@ -476,7 +476,7 @@ pub const builtins = [_]Builtin{
         \\
         \\will output:
         \\
-        \\If all `@compileLog` calls are removed or not encountered by analysis, the program compiles successfully and the generated executable prints:</p> {#code_begin|test|without_compileLog#} const print = @import("std").debug.print; const num1 = blk: { var val1: i32 = 99; val1 = val1 + 1; break :blk val1; }; test "main" { print("Runtime in main, num1 = {}.\n", .{num1}); }`
+        \\If all `@compileLog` calls are removed or not encountered by analysis, the program compiles successfully and the generated executable prints:</p> {#code_begin|test|without_compileLog#} const print = @import("std").debug.print; const num1 = blk: { var val1: i32 = 99; val1 = val1 + 1; break :blk val1; }; test "main" { print("Runtime in main, num1 = {}.\n", .{num1}); }`<pre>
         ,
         .arguments = &.{
             "args: ...",
@@ -714,7 +714,7 @@ pub const builtins = [_]Builtin{
         .signature = "@field(lhs: anytype, comptime field_name: []const u8) (field)",
         .snippet = "@field(${1:lhs: anytype}, ${2:comptime field_name: []const u8})",
         .documentation =
-        \\Performs field access by a compile-time string. Works on both fields and declarations.</p> {#code_begin|test|field_decl_access_by_string#} const std = @import("std"); const Point = struct { x: u32, y: u32, pub var z: u32 = 1; }; test "field access by string" { const expect = std.testing.expect; var p = Point{ .x = 0, .y = 0 }; @field(p, "x") = 4; @field(p, "y") = @field(p, "x") + 1; try expect(@field(p, "x") == 4); try expect(@field(p, "y") == 5); } test "decl access by string" { const expect = std.testing.expect; try expect(@field(Point, "z") == 1); @field(Point, "z") = 2; try expect(@field(Point, "z") == 2); }`
+        \\Performs field access by a compile-time string. Works on both fields and declarations.</p> {#code_begin|test|field_decl_access_by_string#} const std = @import("std"); const Point = struct { x: u32, y: u32, pub var z: u32 = 1; }; test "field access by string" { const expect = std.testing.expect; var p = Point{ .x = 0, .y = 0 }; @field(p, "x") = 4; @field(p, "y") = @field(p, "x") + 1; try expect(@field(p, "x") == 4); try expect(@field(p, "y") == 5); } test "decl access by string" { const expect = std.testing.expect; try expect(@field(Point, "z") == 1); @field(Point, "z") = 2; try expect(@field(Point, "z") == 2); }`<pre>
         ,
         .arguments = &.{
             "lhs: anytype",
@@ -778,7 +778,7 @@ pub const builtins = [_]Builtin{
         .documentation =
         \\This function returns the frame type of a function. This works for [Async Functions](https://ziglang.org/documentation/master/#Async-Functions) as well as any function without a specific calling convention.
         \\
-        \\This type is suitable to be used as the return type of [async](https://ziglang.org/documentation/master/#Async-and-Await) which allows one to, for example, heap-allocate an async function frame:</p> {#code_begin|test|heap_allocated_frame#} {#backend_stage1#} const std = @import("std"); test "heap allocated frame" { const frame = try std.heap.page_allocator.create(@Frame(func)); frame.* = async func(); } fn func() void { suspend {} }`
+        \\This type is suitable to be used as the return type of [async](https://ziglang.org/documentation/master/#Async-and-Await) which allows one to, for example, heap-allocate an async function frame:</p> {#code_begin|test|heap_allocated_frame#} {#backend_stage1#} const std = @import("std"); test "heap allocated frame" { const frame = try std.heap.page_allocator.create(@Frame(func)); frame.* = async func(); } fn func() void { suspend {} }`<pre>
         ,
         .arguments = &.{
             "func: anytype",
@@ -815,7 +815,8 @@ pub const builtins = [_]Builtin{
         .signature = "@hasDecl(comptime Container: type, comptime name: []const u8) bool",
         .snippet = "@hasDecl(${1:comptime Container: type}, ${2:comptime name: []const u8})",
         .documentation =
-        \\Returns whether or not a [struct](https://ziglang.org/documentation/master/#struct), [enum](https://ziglang.org/documentation/master/#enum), or [union](https://ziglang.org/documentation/master/#union) has a declaration matching `name`.</p> {#code_begin|test|hasDecl#} const std = @import("std"); const expect = std.testing.expect; const Foo = struct { nope: i32, pub var blah = "xxx"; const hi = 1; }; test "@hasDecl" { try expect(@hasDecl(Foo, "blah")); // Even though `hi` is private, @hasDecl returns true because this test is // in the same file scope as Foo. It would return false if Foo was declared // in a different file. try expect(@hasDecl(Foo, "hi")); // @hasDecl is for declarations; not fields. try expect(!@hasDecl(Foo, "nope")); try expect(!@hasDecl(Foo, "nope1234")); }`
+        \\Returns whether or not a [struct](https://ziglang.org/documentation/master/#struct), [enum](https://ziglang.org/documentation/master/#enum), or [union](https://ziglang.org/documentation/master/#union) has a declaration matching `name`.</p> {#code_begin|test|hasDecl#} const std = @import("std"); const expect = std.testing.expect; const Foo = struct { nope: i32, pub var blah = "xxx"; const hi = 1; }; test "@hasDecl" { try expect(@hasDecl(Foo, "blah")); // Even though `hi` is private, @hasDecl returns true because this test is // in the same file scope as Foo. It would return false if Foo was declared // in a different file. try expect(@hasDecl(Foo, "hi")); // @hasDecl is for declarations; not fields. try expect(!@hasDecl(Foo, "nope")); try expect(!@hasDecl(Foo, "nope1234")); }`<pre>
+        \\
         ,
         .arguments = &.{
             "comptime Container: type",
@@ -1043,7 +1044,8 @@ pub const builtins = [_]Builtin{
         .documentation =
         \\This function increases the size of the Wasm memory identified by `index` by `delta` in units of unsigned number of Wasm pages. Note that each Wasm page is 64KB in size. On success, returns previous memory size; on failure, if the allocation fails, returns -1.
         \\
-        \\This function is a low level intrinsic with no safety mechanisms usually useful for allocator designers targeting Wasm. So unless you are writing a new allocator from scratch, you should use something like `@import("std").heap.WasmPageAllocator`.</p> {#code_begin|test|wasmMemoryGrow#} const std = @import("std"); const native_arch = @import("builtin").target.cpu.arch; const expect = std.testing.expect; test "@wasmMemoryGrow" { if (native_arch != .wasm32) return error.SkipZigTest; var prev = @wasmMemorySize(0); try expect(prev == @wasmMemoryGrow(0, 1)); try expect(prev + 1 == @wasmMemorySize(0)); }`
+        \\This function is a low level intrinsic with no safety mechanisms usually useful for allocator designers targeting Wasm. So unless you are writing a new allocator from scratch, you should use something like `@import("std").heap.WasmPageAllocator`.</p> {#code_begin|test|wasmMemoryGrow#} const std = @import("std"); const native_arch = @import("builtin").target.cpu.arch; const expect = std.testing.expect; test "@wasmMemoryGrow" { if (native_arch != .wasm32) return error.SkipZigTest; var prev = @wasmMemorySize(0); try expect(prev == @wasmMemoryGrow(0, 1)); try expect(prev + 1 == @wasmMemorySize(0)); }`<pre>
+        \\
         ,
         .arguments = &.{
             "index: u32",
@@ -1121,7 +1123,7 @@ pub const builtins = [_]Builtin{
         \\
         \\The `ptr` argument may be any pointer type and determines the memory address to prefetch. This function does not dereference the pointer, it is perfectly legal to pass a pointer to invalid memory to this function and no illegal behavior will result.
         \\
-        \\The `options` argument is the following struct:</p> {#code_begin|syntax|builtin#} /// This data structure is used by the Zig language code generation and /// therefore must be kept in sync with the compiler implementation. pub const PrefetchOptions = struct { /// Whether the prefetch should prepare for a read or a write. rw: Rw = .read, /// 0 means no temporal locality. That is, the data can be immediately /// dropped from the cache after it is accessed. /// /// 3 means high temporal locality. That is, the data should be kept in /// the cache as it is likely to be accessed again soon. locality: u2 = 3, /// The cache that the prefetch should be preformed on. cache: Cache = .data, pub const Rw = enum { read, write, }; pub const Cache = enum { instruction, data, }; };`
+        \\The `options` argument is the following struct:</p> {#code_begin|syntax|builtin#} /// This data structure is used by the Zig language code generation and /// therefore must be kept in sync with the compiler implementation. pub const PrefetchOptions = struct { /// Whether the prefetch should prepare for a read or a write. rw: Rw = .read, /// 0 means no temporal locality. That is, the data can be immediately /// dropped from the cache after it is accessed. /// /// 3 means high temporal locality. That is, the data should be kept in /// the cache as it is likely to be accessed again soon. locality: u2 = 3, /// The cache that the prefetch should be preformed on. cache: Cache = .data, pub const Rw = enum { read, write, }; pub const Cache = enum { instruction, data, }; };`<pre>
         ,
         .arguments = &.{
             "ptr: anytype",
@@ -1244,7 +1246,9 @@ pub const builtins = [_]Builtin{
         \\}
         \\```
         \\
-        \\Now we use `@setEvalBranchQuota`:</p> {#code_begin|test|setEvalBranchQuota#} test "foo" { comptime { @setEvalBranchQuota(1001); var i = 0; while (i < 1001) : (i += 1) {} } }`
+        \\Now we use `@setEvalBranchQuota`:</p> {#code_begin|test|setEvalBranchQuota#} test "foo" { comptime { @setEvalBranchQuota(1001); var i = 0; while (i < 1001) : (i += 1) {} } }`<pre>
+        \\
+        \\
         ,
         .arguments = &.{
             "comptime new_quota: u32",
@@ -1375,7 +1379,8 @@ pub const builtins = [_]Builtin{
         \\
         \\If `a` or `b` is `undefined`, it is equivalent to a vector of all `undefined` with the same length as the other vector. If both vectors are `undefined`, `@shuffle` returns a vector with all elements `undefined`.
         \\
-        \\`E` must be an [integer](https://ziglang.org/documentation/master/#Integers), [float](https://ziglang.org/documentation/master/#Floats), [pointer](https://ziglang.org/documentation/master/#Pointers), or `bool`. The mask may be any vector length, and its length determines the result length.</p> {#code_begin|test|vector_shuffle#} const std = @import("std"); const expect = std.testing.expect; test "vector @shuffle" { const a = @Vector(7, u8){ 'o', 'l', 'h', 'e', 'r', 'z', 'w' }; const b = @Vector(4, u8){ 'w', 'd', '!', 'x' }; // To shuffle within a single vector, pass undefined as the second argument. // Notice that we can re-order, duplicate, or omit elements of the input vector const mask1 = @Vector(5, i32){ 2, 3, 1, 1, 0 }; const res1: @Vector(5, u8) = @shuffle(u8, a, undefined, mask1); try expect(std.mem.eql(u8, &@as([5]u8, res1), "hello")); // Combining two vectors const mask2 = @Vector(6, i32){ -1, 0, 4, 1, -2, -3 }; const res2: @Vector(6, u8) = @shuffle(u8, a, b, mask2); try expect(std.mem.eql(u8, &@as([6]u8, res2), "world!")); }`
+        \\`E` must be an [integer](https://ziglang.org/documentation/master/#Integers), [float](https://ziglang.org/documentation/master/#Floats), [pointer](https://ziglang.org/documentation/master/#Pointers), or `bool`. The mask may be any vector length, and its length determines the result length.</p> {#code_begin|test|vector_shuffle#} const std = @import("std"); const expect = std.testing.expect; test "vector @shuffle" { const a = @Vector(7, u8){ 'o', 'l', 'h', 'e', 'r', 'z', 'w' }; const b = @Vector(4, u8){ 'w', 'd', '!', 'x' }; // To shuffle within a single vector, pass undefined as the second argument. // Notice that we can re-order, duplicate, or omit elements of the input vector const mask1 = @Vector(5, i32){ 2, 3, 1, 1, 0 }; const res1: @Vector(5, u8) = @shuffle(u8, a, undefined, mask1); try expect(std.mem.eql(u8, &@as([5]u8, res1), "hello")); // Combining two vectors const mask2 = @Vector(6, i32){ -1, 0, 4, 1, -2, -3 }; const res2: @Vector(6, u8) = @shuffle(u8, a, b, mask2); try expect(std.mem.eql(u8, &@as([6]u8, res2), "world!")); }`<pre>
+        \\
         ,
         .arguments = &.{
             "comptime E: type",
@@ -1404,9 +1409,14 @@ pub const builtins = [_]Builtin{
         .signature = "@splat(comptime len: u32, scalar: anytype) @Vector(len, @TypeOf(scalar))",
         .snippet = "@splat(${1:comptime len: u32}, ${2:scalar: anytype})",
         .documentation =
-        \\Produces a vector of length `len` where each element is the value `scalar`:</p> {#code_begin|test|vector_splat#} const std = @import("std"); const expect = std.testing.expect; test "vector @splat" { const scalar: u32 = 5; const result = @splat(4, scalar); comptime try expect(@TypeOf(result) == @Vector(4, u32)); try expect(std.mem.eql(u32, &@as([4]u32, result), &[_]u32{ 5, 5, 5, 5 })); }` 
+        \\Produces a vector of length `len` where each element is the value `scalar`:</p> {#code_begin|test|vector_splat#} const std = @import("std"); const expect = std.testing.expect; test "vector @splat" { const scalar: u32 = 5; const result = @splat(4, scalar); comptime try expect(@TypeOf(result) == @Vector(4, u32)); try expect(std.mem.eql(u32, &@as([4]u32, result), &[_]u32{ 5, 5, 5, 5 })); }`<pre>
         \\
-        \\`scalar` must be an [integer](https://ziglang.org/documentation/master/#Integers), [bool](https://ziglang.org/documentation/master/#Primitive-Types), [float](https://ziglang.org/documentation/master/#Floats), or [pointer](https://ziglang.org/documentation/master/#Pointers).
+        \\
+        \\
+        \\      `scalar` must be an [integer](https://ziglang.org/documentation/master/#Integers), [bool](https://ziglang.org/documentation/master/#Primitive-Types),
+        \\      [float](https://ziglang.org/documentation/master/#Floats), or [pointer](https://ziglang.org/documentation/master/#Pointers).
+        \\      </p>
+        \\
         ,
         .arguments = &.{
             "comptime len: u32",
@@ -1425,7 +1435,8 @@ pub const builtins = [_]Builtin{
         \\  - `.And`, `.Or`, `.Xor` are additionally available for `bool` vectors,
         \\  - `.Min`, `.Max`, `.Add`, `.Mul` are additionally available for [floating point](https://ziglang.org/documentation/master/#Floats) vectors,
         \\
-        \\Note that `.Add` and `.Mul` reductions on integral types are wrapping; when applied on floating point types the operation associativity is preserved, unless the float mode is set to `Optimized`.</p> {#code_begin|test|vector_reduce#} const std = @import("std"); const expect = std.testing.expect; test "vector @reduce" { const value = @Vector(4, i32){ 1, -1, 1, -1 }; const result = value > @splat(4, @as(i32, 0)); // result is { true, false, true, false }; comptime try expect(@TypeOf(result) == @Vector(4, bool)); const is_all_true = @reduce(.And, result); comptime try expect(@TypeOf(is_all_true) == bool); try expect(is_all_true == false); }`
+        \\Note that `.Add` and `.Mul` reductions on integral types are wrapping; when applied on floating point types the operation associativity is preserved, unless the float mode is set to `Optimized`.</p> {#code_begin|test|vector_reduce#} const std = @import("std"); const expect = std.testing.expect; test "vector @reduce" { const value = @Vector(4, i32){ 1, -1, 1, -1 }; const result = value > @splat(4, @as(i32, 0)); // result is { true, false, true, false }; comptime try expect(@TypeOf(result) == @Vector(4, bool)); const is_all_true = @reduce(.And, result); comptime try expect(@TypeOf(is_all_true) == bool); try expect(is_all_true == false); }`<pre>
+        \\
         ,
         .arguments = &.{
             "comptime op: std.builtin.ReduceOp",
@@ -1437,7 +1448,7 @@ pub const builtins = [_]Builtin{
         .signature = "@src() std.builtin.SourceLocation",
         .snippet = "@src()",
         .documentation =
-        \\Returns a `SourceLocation` struct representing the function's name and location in the source code. This must be called in a function.</p> {#code_begin|test|source_location#} const std = @import("std"); const expect = std.testing.expect; test "@src" { try doTheTest(); } fn doTheTest() !void { const src = @src(); try expect(src.line == 9); try expect(src.column == 17); try expect(std.mem.endsWith(u8, src.fn_name, "doTheTest")); try expect(std.mem.endsWith(u8, src.file, "source_location.zig")); }`
+        \\Returns a `SourceLocation` struct representing the function's name and location in the source code. This must be called in a function.</p> {#code_begin|test|source_location#} const std = @import("std"); const expect = std.testing.expect; test "@src" { try doTheTest(); } fn doTheTest() !void { const src = @src(); try expect(src.line == 9); try expect(src.column == 17); try expect(std.mem.endsWith(u8, src.fn_name, "doTheTest")); try expect(std.mem.endsWith(u8, src.file, "source_location.zig")); }`<pre>
         ,
         .arguments = &.{},
     },
@@ -1655,9 +1666,13 @@ pub const builtins = [_]Builtin{
         .signature = "@This() type",
         .snippet = "@This()",
         .documentation =
-        \\Returns the innermost struct, enum, or union that this function call is inside. This can be useful for an anonymous struct that needs to refer to itself:</p> {#code_begin|test|this_innermost#} const std = @import("std"); const expect = std.testing.expect; test "@This()" { var items = [_]i32{ 1, 2, 3, 4 }; const list = List(i32){ .items = items[0..] }; try expect(list.length() == 4); } fn List(comptime T: type) type { return struct { const Self = @This(); items: []T, fn length(self: Self) usize { return self.items.len; } }; }` 
+        \\Returns the innermost struct, enum, or union that this function call is inside. This can be useful for an anonymous struct that needs to refer to itself:</p> {#code_begin|test|this_innermost#} const std = @import("std"); const expect = std.testing.expect; test "@This()" { var items = [_]i32{ 1, 2, 3, 4 }; const list = List(i32){ .items = items[0..] }; try expect(list.length() == 4); } fn List(comptime T: type) type { return struct { const Self = @This(); items: []T, fn length(self: Self) usize { return self.items.len; } }; }`<pre>
         \\
-        \\When `@This()` is used at file scope, it returns a reference to the struct that corresponds to the current file.
+        \\
+        \\
+        \\      When `@This()` is used at file scope, it returns a reference to the
+        \\      struct that corresponds to the current file.
+        \\
         ,
         .arguments = &.{},
     },
@@ -1763,7 +1778,7 @@ pub const builtins = [_]Builtin{
         .documentation =
         \\`@TypeOf` is a special builtin function that takes any (nonzero) number of expressions as parameters and returns the type of the result, using [Peer Type Resolution](https://ziglang.org/documentation/master/#Peer-Type-Resolution).
         \\
-        \\The expressions are evaluated, however they are guaranteed to have no *runtime* side-effects:</p> {#code_begin|test|no_runtime_side_effects#} const std = @import("std"); const expect = std.testing.expect; test "no runtime side effects" { var data: i32 = 0; const T = @TypeOf(foo(i32, &data)); comptime try expect(T == i32); try expect(data == 0); } fn foo(comptime T: type, ptr: *T) T { ptr.* += 1; return ptr.*; }`
+        \\The expressions are evaluated, however they are guaranteed to have no *runtime* side-effects:</p> {#code_begin|test|no_runtime_side_effects#} const std = @import("std"); const expect = std.testing.expect; test "no runtime side effects" { var data: i32 = 0; const T = @TypeOf(foo(i32, &data)); comptime try expect(T == i32); try expect(data == 0); } fn foo(comptime T: type, ptr: *T) T { ptr.* += 1; return ptr.*; }`<pre>
         ,
         .arguments = &.{
             "...",
