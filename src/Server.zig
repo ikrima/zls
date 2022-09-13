@@ -1918,6 +1918,24 @@ fn closeDocumentHandler(server: *Server, writer: anytype, id: types.RequestId, r
 
     _ = id;
     _ = writer;
+
+    const handle = server.document_store.getHandle(req.params.textDocument.uri) orelse {
+        log.warn("Trying to close non existent document {s}", .{req.params.textDocument.uri});
+        return;
+    };
+
+    send(writer, server.arena.allocator(), types.Notification{
+        .method = "textDocument/publishDiagnostics",
+        .params = .{
+            .PublishDiagnostics = .{
+                .uri = handle.uri(),
+                .diagnostics = &[0]types.Diagnostic{},
+            },
+        },
+    }) catch |err| {
+        log.warn("Failed to clear diagnostics on document close {s}, error: {}", .{req.params.textDocument.uri, err});
+    };
+
     server.document_store.closeDocument(req.params.textDocument.uri);
 }
 
