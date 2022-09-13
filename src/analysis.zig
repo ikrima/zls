@@ -905,6 +905,9 @@ pub fn resolveTypeOfNodeInternal(store: *DocumentStore, arena: *std.heap.ArenaAl
                 resolved_type.type.is_type_val = true;
                 return resolved_type;
             }
+            if (std.mem.eql(u8, call_name, "@typeInfo")) {
+                return resolveTypeInfoType(store, arena, handle) catch null;
+            }
 
             if (std.mem.eql(u8, call_name, "@import")) {
                 if (params.len == 0) return null;
@@ -1156,6 +1159,35 @@ pub const FieldAccessReturn = struct {
     unwrapped: ?TypeWithHandle = null,
 };
 
+var cached_type_info_type: ?TypeWithHandle = null;
+pub fn resolveTypeInfoType(store: *DocumentStore, arena: *std.heap.ArenaAllocator, handle: *DocumentStore.Handle) error{OutOfMemory}!?TypeWithHandle {
+    if (cached_type_info_type == null) {
+        const std_handle = (store.resolveImport(handle, "std") catch null) orelse {
+            log.debug("Could not find handle for std uri", .{});
+            return null;
+        };
+        const std_builtin_decl: DeclWithHandle = (try lookupSymbolContainer(store, arena, .{ .node = 0, .handle = std_handle }, "builtin", false)) orelse {
+            log.debug("Could not lookupSymbolContainer for std_builtin_decl", .{});
+            return null;
+        };
+        const std_builtin_type = (try resolveTypeOfNode(store, arena, .{ .node = std_builtin_decl.decl.ast_node, .handle = std_builtin_decl.handle })) orelse {
+            log.debug("Could not resolveTypeOfNode for std_builtin_decl", .{});
+            return null;
+        };
+        const std_builtin_module_node = NodeWithHandle{ .node = std_builtin_type.type.data.other, .handle = std_builtin_type.handle };
+        const type_info_decl = (try lookupSymbolContainer(store, arena, std_builtin_module_node, "Type", false)) orelse {
+            log.debug("could not find  type_info_decl", .{});
+            return null;
+        };
+        const type_info_node = NodeWithHandle{ .node = type_info_decl.decl.ast_node, .handle = type_info_decl.handle };
+        var bound_type_params = BoundTypeParams{};
+        cached_type_info_type = (try resolveTypeOfNodeInternal(store, arena, type_info_node, &bound_type_params)) orelse {
+            log.debug("could not resolveType std.builtin.Type", .{});
+            return null;
+        };
+    }
+    return cached_type_info_type;
+}
 pub fn getFieldAccessType(store: *DocumentStore, arena: *std.heap.ArenaAllocator, handle: *DocumentStore.Handle, source_index: usize, tokenizer: *std.zig.Tokenizer) !?FieldAccessReturn {
     var current_type = TypeWithHandle.typeVal(.{
         .node = undefined,
@@ -1293,6 +1325,30 @@ pub fn getFieldAccessType(store: *DocumentStore, arena: *std.heap.ArenaAllocator
                 } else return null;
 
                 current_type = (try resolveBracketAccessType(store, arena, current_type, if (is_range) .Range else .Single, &bound_type_params)) orelse return null;
+            },
+            .builtin => {
+                const builtin_name = tokenizer.buffer[tok.loc.start..tok.loc.end];
+                if (!std.mem.eql(u8, builtin_name, "@typeInfo")) {
+                    log.debug("Unimplemented builtin: {s}", .{builtin_name});
+                    return null;
+                }
+                if (try resolveTypeInfoType(store, arena, current_type.handle)) |type_info_type| {
+                    current_type = type_info_type.instanceTypeVal().?;
+                    // Skip to the right paren
+                    var paren_count: u32 = 1;
+                    var next_tag = if (tokenizer.next().tag != .l_paren) .eof else tokenizer.next().tag;
+                    while (next_tag != .eof) : (next_tag = tokenizer.next().tag) {
+                        switch (next_tag) {
+                            .l_paren => paren_count += 1,
+                            .r_paren => paren_count -= 1,
+                            else => {},
+                        }
+                        if (paren_count == 0) break;
+                    } else {
+                        log.debug("mismatch paren count for builtin call {s}", .{builtin_name});
+                        return null;
+                    }
+                } else return null;
             },
             else => {
                 log.debug("Unimplemented token: {}", .{tok.tag});

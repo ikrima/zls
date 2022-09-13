@@ -930,7 +930,7 @@ fn getSymbolFieldAccess(
             &server.arena,
             .{ .node = container_handle_node, .handle = container_handle.handle },
             name,
-            true,
+            !container_handle.isEnumType(),
         );
     }
     return null;
