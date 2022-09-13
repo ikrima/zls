@@ -1804,46 +1804,11 @@ const DocSmblDetail = struct {
 };
 
 fn getDocSmblNiceName(tree: Ast, node: Ast.Node.Index) ?[]const u8 {
-    // zig fmt: off
-    const node_tags:   []const Ast.Node.Tag      = tree.nodes.items(.tag);
-    const main_tokens: []const Ast.TokenIndex    = tree.nodes.items(.main_token);
-    const node_datas:  []const Ast.Node.Data     = tree.nodes.items(.data);
-    const token_tags:  []const std.zig.Token.Tag = tree.tokens.items(.tag);
-    // zig fmt: on
-    const main_token = main_tokens[node];
-    return switch (node_tags[node]) {
-        .local_var_decl,
-        .global_var_decl,
-        .simple_var_decl,
-        .aligned_var_decl,
-        .fn_proto,
-        .fn_proto_multi,
-        .fn_proto_one,
-        .fn_proto_simple,
-        .fn_decl,
-        => tree.tokenSlice(main_token + 1),
-
-        .container_field,
-        .container_field_init,
-        .container_field_align,
-
-        .string_literal,
-        .identifier,
-        => tree.tokenSlice(main_token),
-
-        .@"usingnamespace" => getDocSmblNiceName(tree, node_datas[node].lhs),
-
-        .error_value => tree.tokenSlice(main_token + 2),
-
-        .test_decl => {
-            const test_name_token = main_token + 1;
-            return switch (token_tags[test_name_token]) {
-                .string_literal, .identifier => tree.tokenSlice(test_name_token),
-                else => @as([]const u8, "unnamed_test_decl"),
-            };
-        },
-
-        else => return null,
+    return switch (tree.nodes.items(.tag)[node]) {
+        .string_literal    => tree.tokenSlice(tree.nodes.items(.main_token)[node]),
+        .@"usingnamespace" => getDeclNiceName(tree, tree.nodes.items(.data)[node].lhs),
+        .test_decl         => if (getDeclNameToken(tree, node)) |name| name[1 .. name.len - 1] else @as([]const u8, "unnamed_test_decl"),
+        else               => tree.tokenSlice(getDeclNameToken(tree, node) orelse return null),
     };
 }
 fn getDocSmblDetail(tree: Ast, parent_kind: types.DocumentSymbol.Kind, node: Ast.Node.Index, decl_mem_buf: *[2]Ast.Node.Index) DocSmblDetail {
@@ -1998,10 +1963,9 @@ const GetDocumentSymbolsContext = struct {
 };
 
 fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast.Node.Index, context: *GetDocumentSymbolsContext, parent_kind: types.DocumentSymbol.Kind) anyerror!void {
-    const node_tags: []const Ast.Node.Tag = tree.nodes.items(.tag);
-
     const name = getDocSmblNiceName(tree, node) orelse return;
-    if (name.len == 0) return;
+    if (name.len == 0)
+        return;
 
     const starts = tree.tokens.items(.start);
     const start_loc = context.prev_loc.add(try offsets.tokenRelativeLocation(
@@ -2028,21 +1992,6 @@ fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast
         },
     };
 
-    // var child_context = GetDocumentSymbolsContext{
-    //     .prev_loc = start_loc,
-    //     .symbols = .{},
-    //     .encoding = context.encoding,
-    // };
-    // const child_symbol_detail = try getDocumentSymbolChildren(allocator, tree, node, &child_context, parent_kind);
-    // try context.symbols.append(allocator, types.DocumentSymbol{
-    //     .name = name,
-    //     .kind = child_symbol_detail.kind,
-    //     .range = range,
-    //     .selectionRange = range,
-    //     .detail = child_symbol_detail.detail,
-    //     .children = child_context.symbols.items,
-    // });
-
     var child_context = GetDocumentSymbolsContext{
         .prev_loc = start_loc,
         .symbols = .{},
@@ -2051,6 +2000,7 @@ fn getDocumentSymbolsInternal(allocator: std.mem.Allocator, tree: Ast, node: Ast
     var decl_mem_buf: [2]Ast.Node.Index = undefined;
     const child_symbol_detail = getDocSmblDetail(tree, parent_kind, node, &decl_mem_buf);
     if (child_symbol_detail.decl_members) |decl_members| {
+        const node_tags: []const Ast.Node.Tag = tree.nodes.items(.tag);
         for (decl_members) |decl_member| {
             if (shouldAddToOutline(node_tags[decl_member]))
                 try getDocumentSymbolsInternal(allocator, tree, decl_member, &child_context, child_symbol_detail.kind);
